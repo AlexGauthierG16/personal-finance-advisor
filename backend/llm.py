@@ -54,3 +54,28 @@ def categorise_with_model(transactions, categories) -> str:
         ],
     )
     return response.choices[0].message.content or ""
+
+
+def chat_with_tools(messages, tools) -> dict:
+    """One model call with tool definitions (OpenAI chat format).
+
+    Returns {"content": str | None, "tool_calls": [{"id", "name", "arguments"}]}, where
+    `arguments` is the raw JSON string from the model (not parsed or validated here).
+    """
+    load_dotenv()
+    api_key = _env("OPENAI_API_KEY")
+    model = _env("OPENAI_MODEL")
+
+    from openai import OpenAI
+
+    extra = {"tools": tools} if tools else {}
+    message = OpenAI(api_key=api_key).chat.completions.create(
+        model=model, temperature=0, messages=messages, **extra
+    ).choices[0].message
+    return {
+        "content": message.content,
+        "tool_calls": [
+            {"id": c.id, "name": c.function.name, "arguments": c.function.arguments}
+            for c in (message.tool_calls or [])
+        ],
+    }

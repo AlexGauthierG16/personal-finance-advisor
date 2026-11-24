@@ -54,3 +54,19 @@ def savings(totals) -> Decimal:
     """
     expenses = sum((-v for c, v in totals.items() if c not in (INCOME, TRANSFER)), ZERO)
     return totals.get(INCOME, ZERO) - expenses
+
+
+def needs_review_items(transactions, categories) -> list:
+    """The transactions labelled "Needs review", in statement order."""
+    if len(categories) != len(transactions):
+        raise ValueError(f"{len(categories)} labels for {len(transactions)} transactions")
+    return [t for t, c in zip(transactions, categories) if c == NEEDS_REVIEW]
+
+
+def transactions_in_category(transactions, categories, category) -> list:
+    """The transactions labelled with `category`, in statement order."""
+    if category not in CATEGORIES:
+        raise ValueError(f"unknown category {category!r}")
+    if len(categories) != len(transactions):
+        raise ValueError(f"{len(categories)} labels for {len(transactions)} transactions")
+    return [t for t, c in zip(transactions, categories) if c == category]

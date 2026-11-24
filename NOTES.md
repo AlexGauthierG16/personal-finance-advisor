@@ -25,3 +25,12 @@
 - After validation, a negative amount labelled "Income", or a positive amount labelled Rent/Groceries/Eating out/Transport/Subscriptions/Shopping, becomes "Needs review".
 - "Other" and "Transfer to own account" are sign-neutral (money back from savings, unknown refunds); a zero amount is neutral.
 - Side effect: a genuine refund labelled e.g. "Groceries" lands in "Needs review" until we decide how to treat refunds.
+
+## Agent (backend/agent.py)
+- `answer_question(question, transactions, categories, budget)` -> `AgentResult(answer, tool_calls, finished)`. `categories` is the per-transaction label list; `budget` is `{category: Decimal}`.
+- Tools: totals_by_category, variance, savings, needs_review_items, list_transactions(category). They wrap `analysis.py` (two new pure functions added there). Results are JSON with money as strings, never floats; zero is shown as "0.00".
+- One step = one model call, max 5 (`MAX_STEPS`). If the model is still asking for tools after step 5, the result is a fixed message with `finished=False`; nothing is invented.
+- Tool problems (unknown tool, bad arguments, unknown category, no budget set, exception in a tool) are returned to the model as `{"error": ...}` and never crash the loop. Infrastructure errors from llm.py (missing key, network) propagate.
+- `variance` and `savings` results include `needs_review_spend` (positive) so the model can mention uncertain amounts. `needs_review_items.total` is the signed sum of the items (negative = money out).
+- Idea for later (not built): check that every number in the final answer appears in some tool result, and flag it if not. Today this rule is enforced by the system prompt only.
+- Not yet run against the real model; tests use a scripted fake.

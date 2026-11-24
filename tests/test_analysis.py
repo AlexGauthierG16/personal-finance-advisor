@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from backend.analysis import (
-    check_totals, needs_review_total, savings, spend, totals_by_category, variance,
+    check_totals, needs_review_items, needs_review_total, savings, spend,
+    totals_by_category, transactions_in_category, variance,
 )
 from backend.categorise import CATEGORIES, read_labels
 from backend.parser import Transaction, parse_csv
@@ -117,3 +118,28 @@ def test_hand_made_transactions():
            Transaction(__import__("datetime").date(2025, 1, 2), "Y", D("-0.20"))]
     totals = totals_by_category(txs, ["Other", "Other"])
     assert totals["Other"] == D("-0.30")  # exact, no float error
+
+
+def test_needs_review_items(sept):
+    txs, labels = sept
+    items = needs_review_items(txs, labels)
+    assert [(t.description, t.amount) for t in items] == [
+        ("PAYPAL *XYZ", D("-15.00")),
+        ("POS 4421", D("-14.00")),
+        ("POS 7730", D("-8.90")),
+    ]
+    assert sum((t.amount for t in items), D("0")) == D("-37.90")
+
+
+def test_transactions_in_category(sept):
+    txs, labels = sept
+    groceries = transactions_in_category(txs, labels, "Groceries")
+    assert len(groceries) == 6
+    assert sum((t.amount for t in groceries), D("0")) == D("-208.10")
+    assert transactions_in_category(txs, labels, "Other") == []
+
+
+def test_transactions_in_category_unknown_raises(sept):
+    txs, labels = sept
+    with pytest.raises(ValueError):
+        transactions_in_category(txs, labels, "Fun money")

@@ -14,10 +14,11 @@
 
 ## Where things live
 - `backend/main.py`: entry point; serves the page and the API on one port.
-- `backend/llm.py`: the only file that calls the model.
+- `backend/llm.py`: the only file that calls the model (categorising and tool calling).
 - `backend/parser.py`: reads statements into transactions.
 - `backend/categorise.py`: gets categories from llm.py and validates the structured output.
 - `backend/analysis.py`: all totals, variances and savings, in code.
+- `backend/agent.py`: runs the tool-calling loop (max 5 steps) and executes the tools that wrap analysis.py; the API call itself is in llm.py.
 - `frontend/`: plain HTML, CSS and JavaScript, no framework.
 - `data/`: synthetic sample statements only.
 - `tests/`: one test per feature, with fixtures whose expected totals are known.
@@ -43,3 +44,4 @@
 
 ## Mistakes we have seen
 - Plain `pytest` could not import `backend`; `pytest.ini` fixes the path. Always run tests from the repo root.
+- `sed -i` without '' fails on macOS; use Python or the edit tool to change files.
