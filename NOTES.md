@@ -80,3 +80,11 @@
 - The page shows them in a `<details>` section "How the agent got this answer", open by default for demos, followed by "Numbers checked against tool results: all verified / not verified: ... / no numbers in this answer / not checked, the agent ran out of steps". Nothing is streamed: the trace appears together with the answer.
 
 - The `variance` tool result now carries `actual` and `budget` per category next to `variance`, so a model quoting "208.10 against a 200.00 budget" passes the number check. The user's budget amounts are therefore sent to the model with questions (they are the user's own settings, like the totals).
+## Human labels
+- 24 Nov: data/demo_nov_labels.csv labelled by hand by the group (70 rows). Judgment calls: refund -> Other, gift received -> Other, tabaccheria -> Shopping, electricity bill -> Other, books -> Shopping.
+## Evaluation: two sets
+- `python -m eval.run_eval` now evaluates two sets, 3 runs each (6 real API calls), and reports them separately in `eval/results.md`: a summary table with one row per set, then a full section per set (matching overall / per run / per category, mismatches, consistency, totals check, target verdict). Nothing is pooled or averaged across the sets.
+  - easy set: `data/sample_sept.csv` vs `data/sample_sept_labels.csv` (25 transactions)
+  - realistic set: `data/demo_nov.csv` vs `data/demo_nov_labels.csv` (70 transactions, with personal data, refunds and unclear lines)
+- All files are read and validated before the first model call, so a labels file that does not match its statement stops the run with no API cost. A model failure names the set it happened in and saves nothing.
+- Hand totals used by the tests for demo_nov: statement total -410.06 (1,159.95 in, 1,570.01 out); label counts Groceries 14, Eating out 24, Needs review 3. The labels files are ground truth and were not changed.

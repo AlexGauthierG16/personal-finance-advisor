@@ -1,11 +1,16 @@
-"""Evaluation: categorise data/sample_sept.csv with the real model 3 times and compare
-with the hand-made labels. Run from the repo root:  python -m eval.run_eval
+"""Evaluation: categorise two statements with the real model 3 times each and compare with the
+hand-made labels. Run from the repo root:  python -m eval.run_eval
 
-Reports accuracy (overall, per run, per category), the mismatches, consistency across runs,
-and whether the category totals add up to the statement total. Writes eval/results.md.
-The model is only reached through backend.categorise -> backend.llm.
+  easy set       data/sample_sept.csv  vs data/sample_sept_labels.csv
+  realistic set  data/demo_nov.csv     vs data/demo_nov_labels.csv
+
+The sets are reported separately (never pooled). For each: accuracy (overall, per run, per
+category), the mismatches, consistency across runs, and whether the category totals add up to
+the statement total. Writes eval/results.md. The model is only reached through
+backend.categorise -> backend.llm.
 """
 import os
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -18,9 +23,23 @@ from backend.categorise import CATEGORIES, NEEDS_REVIEW, read_labels
 from backend.parser import parse_csv
 
 ROOT = Path(__file__).resolve().parent.parent
-STATEMENT = ROOT / "data" / "sample_sept.csv"
-LABELS = ROOT / "data" / "sample_sept_labels.csv"
 RESULTS_PATH = Path(__file__).resolve().parent / "results.md"
+
+
+@dataclass(frozen=True)
+class Dataset:
+    key: str
+    title: str
+    name: str  # file stem, e.g. sample_sept
+    statement: Path
+    labels: Path
+
+
+EASY_SET = Dataset("easy", "Easy set", "sample_sept",
+                   ROOT / "data" / "sample_sept.csv", ROOT / "data" / "sample_sept_labels.csv")
+REALISTIC_SET = Dataset("realistic", "Realistic set", "demo_nov",
+                        ROOT / "data" / "demo_nov.csv", ROOT / "data" / "demo_nov_labels.csv")
+DATASETS = (EASY_SET, REALISTIC_SET)
 RUNS = 3
 TARGET_PERCENT = 90  # project goal (README): at least 90% matching categories, totals exact
 
@@ -74,22 +93,17 @@ def _cell(text) -> str:
     return str(text).replace("|", "\\|")
 
 
-def render_report(result: dict, model: str, when: str) -> str:
+def _section(ds: Dataset, result: dict) -> list[str]:
     k, rec = result["runs"], result["reconciliation"]
-    reconciled = sum(r["ok"] for r in rec)
     lines = [
-        "# Categorisation evaluation", "",
-        f"- Model: `{model}`", f"- Date: {when}",
-        f"- Statement: `data/sample_sept.csv` ({result['transactions']} transactions), "
-        f"{k} runs, compared with `data/sample_sept_labels.csv`", "",
-        "## Summary", "",
-        "| Metric | Result |", "|---|---|",
-        f"| Matching the hand labels (all runs) | {pct(*result['overall'])} |",
-        f"| Same category in all {k} runs | {pct(*result['consistency'])} |",
-        f"| Runs whose category totals add up to the statement total | {reconciled}/{k} |",
-        f"| Project target (at least {TARGET_PERCENT}% matching and exact totals) | "
-        f"{'met' if result['meets_target'] else 'not met'} |", "",
-        "## Per run", "",
+        f"## {ds.title}: {ds.name}", "",
+        f"`data/{ds.name}.csv` ({result['transactions']} transactions), {k} runs, "
+        f"compared with `data/{ds.name}_labels.csv`.", "",
+        f"- Matching the hand labels (all runs): {pct(*result['overall'])}",
+        f"- Same category in all {k} runs: {pct(*result['consistency'])}",
+        f"- Runs whose totals add up: {sum(x['ok'] for x in rec)}/{k}",
+        f"- Target: {'met' if result['meets_target'] else 'not met'}", "",
+        "### Per run", "",
         "| Run | Matching | Needs review amount | Totals add up |", "|---|---|---|---|",
     ]
     for i, ((m, t), r) in enumerate(zip(result["per_run"], rec), start=1):
@@ -99,10 +113,10 @@ def render_report(result: dict, model: str, when: str) -> str:
         else:
             check = f"FAIL (statement {money(r['statement_total'])})"
         lines.append(f"| {i} | {pct(m, t)} | {nr} | {check} |")
-    lines += ["", "## Per category (hand label, all runs pooled)", "",
+    lines += ["", "### Per category (hand label, all runs pooled)", "",
               "| Category | Matching |", "|---|---|"]
     lines += [f"| {c} | {pct(*result['per_category'][c])} |" for c in CATEGORIES]
-    lines += ["", "## Mismatches", ""]
+    lines += ["", "### Mismatches", ""]
     if not result["mismatches"]:
         lines.append("None.")
     else:
@@ -111,10 +125,34 @@ def render_report(result: dict, model: str, when: str) -> str:
         for m in result["mismatches"]:
             row = [m["date"], m["description"], m["truth"], *m["answers"]]
             lines.append("| " + " | ".join(_cell(c) for c in row) + " |")
-    return "\n".join(lines) + "\n"
+    return lines + [""]
 
 
-def main(results_path=RESULTS_PATH) -> int:
+def render_report(results, model: str, when: str) -> str:
+    """`results` is a list of (Dataset, evaluate() result), reported one after the other."""
+    runs = results[0][1]["runs"]
+    lines = [
+        "# Categorisation evaluation", "",
+        f"- Model: `{model}`", f"- Date: {when}", f"- Runs per set: {runs}",
+        f"- Target per set: at least {TARGET_PERCENT}% matching and exact totals", "",
+        "## Summary", "",
+        "| Set | Statement | Transactions | Matching the hand labels | Same category in all runs "
+        "| Runs whose totals add up | Target |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for ds, r in results:
+        reconciled = sum(x["ok"] for x in r["reconciliation"])
+        lines.append(
+            f"| {ds.title} | `{ds.name}` | {r['transactions']} | {pct(*r['overall'])} | "
+            f"{pct(*r['consistency'])} | {reconciled}/{r['runs']} | "
+            f"{'met' if r['meets_target'] else 'not met'} |")
+    lines.append("")
+    for ds, r in results:
+        lines += _section(ds, r)
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def main(results_path=RESULTS_PATH, datasets=DATASETS) -> int:
     load_dotenv()
     missing = [name for name in ("OPENAI_API_KEY", "OPENAI_MODEL") if not os.environ.get(name)]
     if missing:
@@ -122,19 +160,32 @@ def main(results_path=RESULTS_PATH) -> int:
               "Put them in the .env file (see .env.example) and run again. No model calls were made.")
         return 1
 
-    transactions = parse_csv(STATEMENT)
-    truth = read_labels(LABELS, transactions)
-    runs = []
-    for i in range(1, RUNS + 1):
-        print(f"Run {i}/{RUNS}: asking the model to categorise {len(transactions)} transactions...")
+    loaded = []  # read everything first, so a bad file costs no API calls
+    for ds in datasets:
         try:
-            runs.append(categorise.categorise(transactions))
-        except Exception as e:  # stop cleanly; never leave a half-finished results file
-            print(f"Evaluation stopped: the model call failed ({type(e).__name__}). "
-                  "Check the API key, the model name and the network. Nothing was saved.")
+            transactions = parse_csv(ds.statement)
+            truth = read_labels(ds.labels, transactions)
+        except (OSError, ValueError) as e:
+            print(f"Cannot read the {ds.title.lower()} ({ds.name}): {e}. No model calls were made.")
             return 1
+        loaded.append((ds, transactions, truth))
 
-    report = render_report(evaluate(transactions, truth, runs), os.environ["OPENAI_MODEL"],
+    results = []
+    for ds, transactions, truth in loaded:
+        runs = []
+        for i in range(1, RUNS + 1):
+            print(f"{ds.title} ({ds.name}), run {i}/{RUNS}: "
+                  f"asking the model to categorise {len(transactions)} transactions...")
+            try:
+                runs.append(categorise.categorise(transactions))
+            except Exception as e:  # stop cleanly; never leave a half-finished results file
+                print(f"Evaluation stopped on the {ds.title.lower()} ({ds.name}): "
+                      f"the model call failed ({type(e).__name__}). "
+                      "Check the API key, the model name and the network. Nothing was saved.")
+                return 1
+        results.append((ds, evaluate(transactions, truth, runs)))
+
+    report = render_report(results, os.environ["OPENAI_MODEL"],
                            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
     Path(results_path).write_text(report, encoding="utf-8")
     print()
