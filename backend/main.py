@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend import analysis, categorise, privacy
-from backend.agent import answer_question, money
+from backend.agent import answer_question, describe_steps, money
 from backend.categorise import CATEGORIES, EXPENSE_CATEGORIES, INCOME, NEEDS_REVIEW
 from backend.parser import parse_csv_text
 
@@ -182,6 +182,8 @@ def api_ask(req: AskRequest):
         "unverified_numbers": result.unverified_numbers,
         "finished": result.finished,
         "tools_used": [c["name"] for c in result.tool_calls],
+        "steps": describe_steps(result.tool_calls),
+        "numbers_checked": result.numbers_checked,
     }
 
 

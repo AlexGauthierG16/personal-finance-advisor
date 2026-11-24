@@ -73,3 +73,10 @@
 - Trade-off: without amounts or sign the model categorises from wording alone, so expect more "Needs review" (e.g. refunds, salary lines without clear wording) and `check_signs` still downgrades contradictions. Re-run `python -m eval.run_eval` once a key exists to measure the effect.
 - `POST /api/preview` returns original and sent text per row (no model call, nothing stored); the page shows it before enabling Analyse.
 - `data/sample_private.csv`: 16 synthetic rows with fake personal data (documentation-example IBANs, test card numbers, example.com emails, invented names and codice fiscale), used by tests.
+
+## Agent trace in the page
+- `/api/ask` also returns `steps` (one per tool call: step number, tool, arguments, label like `list_transactions(Eating out)`, a one-line summary, ok flag) and `numbers_checked` (distinct numbers in the answer). `tools_used` is kept.
+- Summaries are built in Python from the tool result (counts and figures copied from it, nothing recomputed) and never contain transaction descriptions. Errors show as `error: ...`.
+- The page shows them in a `<details>` section "How the agent got this answer", open by default for demos, followed by "Numbers checked against tool results: all verified / not verified: ... / no numbers in this answer / not checked, the agent ran out of steps". Nothing is streamed: the trace appears together with the answer.
+
+- The `variance` tool result now carries `actual` and `budget` per category next to `variance`, so a model quoting "208.10 against a 200.00 budget" passes the number check. The user's budget amounts are therefore sent to the model with questions (they are the user's own settings, like the totals).

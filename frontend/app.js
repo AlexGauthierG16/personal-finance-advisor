@@ -261,6 +261,28 @@ async function ask(event) {
   }
 }
 
+function verificationText(data) {
+  const prefix = "Numbers checked against tool results: ";
+  if (!data.finished) return prefix + "not checked, the agent ran out of steps";
+  if (data.unverified_numbers.length > 0) return prefix + "not verified: " + data.unverified_numbers.join(", ");
+  if (data.numbers_checked === 0) return prefix + "no numbers in this answer";
+  return prefix + "all verified";
+}
+
+function renderHow(data) {
+  const list = $("steps");
+  list.replaceChildren();
+  for (const step of data.steps) {
+    const li = el("li", { className: step.ok ? "" : "failed" });
+    li.append(el("code", {}, step.label), " \u2192 ", el("span", {}, step.summary));
+    list.append(li);
+  }
+  $("steps-empty").hidden = data.steps.length > 0;
+  const verification = $("verification");
+  verification.textContent = verificationText(data);
+  verification.classList.toggle("bad", !data.finished || data.unverified_numbers.length > 0);
+}
+
 function showAnswer(data) {
   const warning = $("warning");
   let answer = data.answer;
@@ -277,9 +299,7 @@ function showAnswer(data) {
     warning.hidden = true;
   }
   $("answer").textContent = answer;
-  $("tools").textContent = data.tools_used.length
-    ? "Figures looked up with: " + data.tools_used.join(", ")
-    : "No figures were looked up for this answer.";
+  renderHow(data);
   $("answer-box").hidden = false;
 }
 

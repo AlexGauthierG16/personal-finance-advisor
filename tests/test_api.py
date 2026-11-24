@@ -385,3 +385,60 @@ def test_analyse_sends_only_anonymised_descriptions(monkeypatch):
     # the user's own view keeps the original text
     items = r.json()["needs_review"]["items"]
     assert items[1]["description"] == "BONIFICO DA ROSSI MARIO CAUSALE PAGAMENTO LEZIONI"
+
+
+# ---------------------------------------------------------------- the agent's steps
+
+def test_ask_returns_the_steps_in_order(monkeypatch, analysed):
+    fake_agent(monkeypatch, [tool_call("savings"),
+                             tool_call("list_transactions", '{"category": "Eating out"}'),
+                             text("Savings are -27.18; eating out was -107.80.")])
+    body = ask().json()
+    assert body["steps"] == [
+        {"step": 1, "tool": "savings", "arguments": {}, "label": "savings",
+         "summary": "savings -27.18, with 37.90 in Needs review counted as spending", "ok": True},
+        {"step": 2, "tool": "list_transactions", "arguments": {"category": "Eating out"},
+         "label": "list_transactions(Eating out)", "summary": "7 transactions, total -107.80", "ok": True},
+    ]
+    assert body["tools_used"] == ["savings", "list_transactions"]
+    assert body["numbers_checked"] == 2
+    assert body["warning"] is False and body["finished"] is True
+
+
+def test_ask_unknown_tool_is_a_failed_step_not_an_api_error(monkeypatch, analysed):
+    fake_agent(monkeypatch, [tool_call("delete_everything"), text("I cannot do that.")])
+    r = ask()
+    assert r.status_code == 200
+    (step,) = r.json()["steps"]
+    assert step["ok"] is False and step["tool"] == "delete_everything"
+    assert r.json()["numbers_checked"] == 0
+
+
+def test_ask_invented_number_is_counted_and_flagged(monkeypatch, analysed):
+    fake_agent(monkeypatch, [tool_call("savings"), text("Savings -27.18, save 150.00 more.")])
+    body = ask().json()
+    assert body["warning"] is True
+    assert body["numbers_checked"] == 2
+    assert body["unverified_numbers"] == ["150.00"]
+
+
+def test_ask_without_tools_has_no_steps(monkeypatch, analysed):
+    fake_agent(monkeypatch, [text("I can only look at your statement.")])
+    body = ask().json()
+    assert body["steps"] == [] and body["tools_used"] == []
+
+
+def test_ask_step_limit_reports_unfinished_with_its_steps(monkeypatch, analysed):
+    fake_agent(monkeypatch, [tool_call("savings")] * 5)
+    body = ask().json()
+    assert body["finished"] is False
+    assert [s["step"] for s in body["steps"]] == [1, 2, 3, 4, 5]
+
+
+def test_ask_quoting_the_budget_is_verified(monkeypatch, analysed):
+    fake_agent(monkeypatch, [tool_call("variance"),
+                             text("Eating out: 107.80 spent against a 120.00 budget, 12.20 under.")])
+    body = ask().json()
+    assert body["warning"] is False
+    assert body["unverified_numbers"] == []
+    assert body["numbers_checked"] == 3

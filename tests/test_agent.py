@@ -320,3 +320,132 @@ def test_a_date_in_the_answer_is_flagged_because_dates_are_never_sent(monkeypatc
     FakeModel(monkeypatch, [ask([call("list_transactions", '{"category": "Groceries"}')]),
                             say("On 2025-09-02 you paid 42.30 at Esselunga.")])
     assert run(sept).unverified_numbers == ["2025", "09", "02"]
+
+
+# --- the agent's work made visible: steps and numbers_checked ---
+
+def steps_of(result):
+    return agent.describe_steps(result.tool_calls)
+
+
+def test_steps_in_order_with_tool_names_and_arguments(monkeypatch, sept):
+    FakeModel(monkeypatch, [
+        ask([call("totals_by_category", id="a")]),
+        ask([call("list_transactions", '{"category": "Eating out"}', id="b")]),
+        say("done"),
+    ])
+    assert steps_of(run(sept)) == [
+        {"step": 1, "tool": "totals_by_category", "arguments": {}, "label": "totals_by_category",
+         "summary": "9 categories with transactions", "ok": True},
+        {"step": 2, "tool": "list_transactions", "arguments": {"category": "Eating out"},
+         "label": "list_transactions(Eating out)", "summary": "7 transactions, total -107.80", "ok": True},
+    ]
+
+
+@pytest.mark.parametrize("name,args,summary", [
+    ("variance", "{}", "7 categories, 4 over budget: Groceries, Shopping, Subscriptions, Transport"),
+    ("savings", "{}", "savings -27.18, with 37.90 in Needs review counted as spending"),
+    ("needs_review_items", "{}", "3 transactions, total -37.90"),
+    ("list_transactions", '{"category": "Groceries"}', "6 transactions, total -208.10"),
+    ("list_transactions", '{"category": "Other"}', "0 transactions, total 0.00"),
+])
+def test_step_summaries(monkeypatch, sept, name, args, summary):
+    FakeModel(monkeypatch, [ask([call(name, args)]), say("ok")])
+    (step,) = steps_of(run(sept))
+    assert step["summary"] == summary
+    assert step["ok"] is True
+
+
+def test_two_tool_calls_in_one_reply_are_two_ordered_steps(monkeypatch, sept):
+    FakeModel(monkeypatch, [ask([call("savings", id="a"), call("needs_review_items", id="b")]), say("ok")])
+    steps = steps_of(run(sept))
+    assert [(s["step"], s["tool"]) for s in steps] == [(1, "savings"), (2, "needs_review_items")]
+
+
+def test_unknown_tool_step_is_marked_as_an_error(monkeypatch, sept):
+    FakeModel(monkeypatch, [ask([call("delete_everything")]), say("no")])
+    (step,) = steps_of(run(sept))
+    assert step["ok"] is False
+    assert step["summary"].startswith("error: unknown tool")
+    assert step["tool"] == "delete_everything" and step["arguments"] == {}
+
+
+def test_malformed_arguments_keep_the_raw_text(monkeypatch, sept):
+    FakeModel(monkeypatch, [ask([call("list_transactions", "not json")]), say("no")])
+    (step,) = steps_of(run(sept))
+    assert step["ok"] is False
+    assert step["arguments"] == "not json"
+    assert step["label"] == "list_transactions"
+    assert step["summary"].startswith("error:")
+
+
+def test_unknown_category_and_missing_budget_are_error_steps(monkeypatch, sept):
+    FakeModel(monkeypatch, [ask([call("list_transactions", '{"category": "Fun money"}', id="a"),
+                                 call("variance", id="b")]), say("no")])
+    steps = steps_of(run(sept, budget={}))
+    assert [s["ok"] for s in steps] == [False, False]
+    assert "Fun money" in steps[0]["summary"]
+    assert "budget" in steps[1]["summary"]
+
+
+def test_no_tool_calls_means_no_steps(monkeypatch, sept):
+    FakeModel(monkeypatch, [say("I can only look at your statement.")])
+    assert steps_of(run(sept)) == []
+
+
+def test_step_limit_run_still_has_its_steps(monkeypatch, sept):
+    FakeModel(monkeypatch, lambda n: ask([call("savings", id=f"c{n}")]))
+    result = run(sept)
+    assert result.finished is False
+    assert [s["step"] for s in steps_of(result)] == [1, 2, 3, 4, 5]
+
+
+def test_numbers_checked_counts_distinct_numbers(monkeypatch, sept):
+    FakeModel(monkeypatch, [ask([call("savings")]), say("Savings -27.18; 37.90 is uncertain; again -27.18.")])
+    result = run(sept)
+    assert result.numbers_checked == 2
+    assert result.unverified_numbers == []
+
+
+def test_numbers_checked_zero_when_the_answer_has_no_numbers(monkeypatch, sept):
+    FakeModel(monkeypatch, [say("You are under budget.")])
+    assert run(sept).numbers_checked == 0
+
+
+def test_numbers_checked_includes_invented_numbers(monkeypatch, sept):
+    FakeModel(monkeypatch, [ask([call("savings")]), say("Savings -27.18 but save 150.00 more.")])
+    result = run(sept)
+    assert result.numbers_checked == 2
+    assert result.unverified_numbers == ["150.00"]
+
+
+def test_answer_numbers_ignores_list_markers():
+    assert agent.answer_numbers("1. Rent 650.00\n2. Rent 650,00 and 12") == ["650.00", "650,00", "12"]
+
+
+# --- the variance tool also returns actual and budget, so quoting them can be verified ---
+
+def test_variance_result_includes_actual_and_budget(monkeypatch, sept):
+    fake = FakeModel(monkeypatch, [ask([call("variance")]), say("ok")])
+    run(sept)
+    (res,) = tool_results(fake.calls[1][0])
+    assert res["actual"]["Groceries"] == "208.10"
+    assert res["budget"]["Groceries"] == "200.00"
+    assert res["variance"]["Groceries"] == "8.10"
+    assert res["actual"]["Eating out"] == "107.80" and res["budget"]["Eating out"] == "120.00"
+    assert res["actual"]["Transport"] == "43.40" and res["budget"]["Transport"] == "0.00"   # no budget set
+    assert set(res["actual"]) == set(res["budget"]) == set(res["variance"])
+
+
+def test_quoting_actual_and_budget_from_variance_is_verified(monkeypatch, sept):
+    FakeModel(monkeypatch, [ask([call("variance")]),
+                            say("Groceries: 208.10 spent against a 200.00 budget, so 8.10 over. "
+                                "Eating out: 107.80 against 120.00, so 12.20 under.")])
+    result = run(sept)
+    assert result.unverified_numbers == []
+    assert result.numbers_checked == 6
+
+
+def test_a_wrong_budget_figure_is_still_flagged(monkeypatch, sept):
+    FakeModel(monkeypatch, [ask([call("variance")]), say("Groceries: 208.10 against a 250.00 budget.")])
+    assert run(sept).unverified_numbers == ["250.00"]

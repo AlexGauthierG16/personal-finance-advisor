@@ -85,7 +85,12 @@
       <div id="answer-box" hidden>
         <div id="warning" class="warning" role="alert" hidden></div>
         <p id="answer" class="answer"></p>
-        <p id="tools" class="hint"></p>
+        <details id="how" open>
+          <summary>How the agent got this answer</summary>
+          <ol id="steps" class="steps"></ol>
+          <p id="steps-empty" class="hint" hidden>The agent answered without looking up any figures.</p>
+          <p id="verification" class="verification"></p>
+        </details>
       </div>
     </section>
   </main>
