@@ -4,6 +4,7 @@ This file runs the loop and executes the tools. The API call itself lives in llm
 Every number the model sees comes from analysis.py (Decimal); money is sent as strings.
 """
 import json
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -54,6 +55,48 @@ class AgentResult:
     answer: str
     tool_calls: list = field(default_factory=list)  # [{"name", "arguments", "result"}]
     finished: bool = True  # False if the step limit was hit
+    unverified_numbers: list = field(default_factory=list)  # numbers in the answer not found in any tool result
+
+
+NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+LIST_MARKER = re.compile(r"(?m)^\s*\d+[.)]\s+")  # "1. " at the start of a line is formatting
+
+
+def _values(token: str) -> set:
+    """Possible values of a number as written ("208,10", "1.234,56", "1,234.56"); sign is ignored."""
+    has_dot, has_comma = "." in token, "," in token
+    if has_dot and has_comma:  # the separator that comes last is the decimal one
+        decimal = "." if token.rfind(".") > token.rfind(",") else ","
+        thousands = "," if decimal == "." else "."
+        return {Decimal(token.replace(thousands, "").replace(decimal, "."))}
+    if has_dot or has_comma:
+        sep = "." if has_dot else ","
+        if token.count(sep) > 1:  # 1,234,567
+            return {Decimal(token.replace(sep, ""))}
+        head, tail = token.split(sep)
+        value = Decimal(f"{head}.{tail}")
+        if len(tail) == 3 and len(head) <= 3:  # 1,234: thousands or decimals, accept either
+            return {value, Decimal(head + tail)}
+        return {value}
+    return {Decimal(token)}
+
+
+def unverified_numbers(answer: str, tool_calls) -> list[str]:
+    """Numbers (as written) in `answer` that appear in no successful tool result.
+
+    The same value in another format counts as found (208.10 = 208,10 = -208.10).
+    Error results are ignored: they can echo text the model supplied.
+    """
+    known = set()
+    for call in tool_calls:
+        if "error" not in call["result"]:
+            for token in NUMBER.findall(json.dumps(call["result"])):
+                known |= _values(token)
+    missing = []
+    for token in NUMBER.findall(LIST_MARKER.sub("", answer)):
+        if known.isdisjoint(_values(token)) and token not in missing:
+            missing.append(token)
+    return missing
 
 
 def money(value: Decimal) -> str:
@@ -115,7 +158,11 @@ def answer_question(question, transactions, categories, budget) -> AgentResult:
         if not calls:
             text = reply.get("content")
             if text:
-                return AgentResult(text, trace, True)
+                missing = unverified_numbers(text, trace)
+                if missing:
+                    text = ("Warning: these numbers could not be verified against the data: "
+                            + ", ".join(missing) + ".\n\n" + text)
+                return AgentResult(text, trace, True, missing)
             return AgentResult("The model returned an empty answer.", trace, False)
         messages.append({
             "role": "assistant", "content": reply.get("content"),

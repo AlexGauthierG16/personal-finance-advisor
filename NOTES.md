@@ -34,3 +34,10 @@
 - `variance` and `savings` results include `needs_review_spend` (positive) so the model can mention uncertain amounts. `needs_review_items.total` is the signed sum of the items (negative = money out).
 - Idea for later (not built): check that every number in the final answer appears in some tool result, and flag it if not. Today this rule is enforced by the system prompt only.
 - Not yet run against the real model; tests use a scripted fake.
+
+## Number check (agent.unverified_numbers)
+- After the model's final answer, every number in it must appear in a successful tool result from the same run. Otherwise `AgentResult.answer` starts with a "Warning: these numbers could not be verified ..." line (followed by the original text) and `unverified_numbers` lists them as written.
+- Same value in another format is accepted: 208.10 = 208,10 = -208.10 = 1.234,56 = 1,234.56 (sign ignored; "1,234" may be 1234 or 1.234). Dates and numbers inside descriptions count, because they appear in tool results.
+- Error results are not a source of truth (they can echo text the model supplied). "1. " list markers at line start are ignored. The fixed step-limit message is not checked.
+- Strict by design: a number repeated from the user's own question (e.g. "is 200 too much?") or a count the model worked out ("3 items") is flagged unless a tool result contains it. Loosen later if this proves noisy.
+- This catches invented figures; it does not prove the number is attached to the right label (e.g. 8.10 described as the wrong category).

@@ -192,3 +192,87 @@ def test_llm_chat_with_tools_missing_env(monkeypatch):
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
     with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
         llm.chat_with_tools([{"role": "user", "content": "hi"}], [])
+
+
+# --- number verification: every number in the final answer must appear in a tool result ---
+
+def test_answer_with_numbers_from_tools_passes_unchanged(monkeypatch, sept):
+    text = "You spent 208,10 on groceries and 650.00 on rent."  # tool results say -208.10 / -650.00
+    FakeModel(monkeypatch, [ask([call("totals_by_category")]), say(text)])
+    result = run(sept)
+    assert result.unverified_numbers == []
+    assert result.answer == text
+    assert result.finished is True
+
+
+def test_invented_number_gets_a_warning(monkeypatch, sept):
+    text = "Your savings are -27.18 EUR, but you could save 150.00 more."
+    FakeModel(monkeypatch, [ask([call("savings")]), say(text)])
+    result = run(sept)
+    assert result.unverified_numbers == ["150.00"]
+    assert result.answer != text
+    assert result.answer.startswith("Warning")
+    assert "150.00" in result.answer.split("\n")[0]       # listed in the warning line
+    assert "-27.18" not in result.answer.split("\n")[0]   # verified numbers are not listed
+    assert text in result.answer                          # original answer is still included
+    assert result.finished is True
+
+
+def test_numbers_without_any_tool_call_are_unverified(monkeypatch, sept):
+    FakeModel(monkeypatch, [say("You spent about 300 EUR.")])
+    assert run(sept).unverified_numbers == ["300"]
+
+
+def test_numbers_from_error_results_do_not_count(monkeypatch, sept):
+    # the error text echoes the tool name, so "999" appears in a tool result - but only an error
+    FakeModel(monkeypatch, [ask([call("delete_999")]), say("It is 999.")])
+    assert run(sept).unverified_numbers == ["999"]
+
+
+def test_dates_and_description_numbers_from_tool_results_pass(monkeypatch, sept):
+    text = "On 2025-09-02 you paid 42.30 at Esselunga; POS 4421 needs review."
+    FakeModel(monkeypatch, [ask([call("list_transactions", '{"category": "Groceries"}', id="a"),
+                                 call("needs_review_items", id="b")]), say(text)])
+    assert run(sept).unverified_numbers == []
+
+
+def test_list_markers_and_trailing_punctuation_are_ignored(monkeypatch, sept):
+    text = "1. Rent: 650.00\n2. Groceries: 208.10."
+    FakeModel(monkeypatch, [ask([call("totals_by_category")]), say(text)])
+    assert run(sept).unverified_numbers == []
+
+
+def test_duplicates_are_listed_once(monkeypatch, sept):
+    FakeModel(monkeypatch, [say("Try 150 or 150 or 75.")])
+    assert run(sept).unverified_numbers == ["150", "75"]
+
+
+def trace_with(**result):
+    return [{"name": "t", "arguments": "{}", "result": result}]
+
+
+@pytest.mark.parametrize("answer", [
+    "208.10", "208,10", "-208.10", "€208.10", "EUR 208,10.", "(208.10)",
+])
+def test_same_value_different_formatting(answer):
+    assert agent.unverified_numbers(answer, trace_with(total="-208.10")) == []
+
+
+@pytest.mark.parametrize("answer", ["1,234.56", "1.234,56", "1234.56", "1234,56"])
+def test_thousands_separators(answer):
+    assert agent.unverified_numbers(answer, trace_with(total="1234.56")) == []
+
+
+def test_near_miss_is_not_a_match():
+    trace = trace_with(total="-208.10")
+    assert agent.unverified_numbers("208.11", trace) == ["208.11"]
+    assert agent.unverified_numbers("20.81", trace) == ["20.81"]
+    assert agent.unverified_numbers("1,234.57", trace_with(total="1234.56")) == ["1,234.57"]
+
+
+def test_trailing_zeros_do_not_matter():
+    assert agent.unverified_numbers("208.1 and 208.100", trace_with(total="208.10")) == []
+
+
+def test_no_numbers_means_nothing_to_verify():
+    assert agent.unverified_numbers("You are under budget.", []) == []
