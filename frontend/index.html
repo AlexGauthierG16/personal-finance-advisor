@@ -7,7 +7,65 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Personal Financial Advisor</h1>
+  <main>
+    <header>
+      <h1>Personal Financial Advisor</h1>
+      <p class="lead">Upload a bank statement, set your monthly budget, and see where you stand. All amounts are in EUR.</p>
+    </header>
+
+    <section aria-labelledby="h-upload">
+      <h2 id="h-upload">1. Your statement</h2>
+      <label for="file">CSV file</label>
+      <input type="file" id="file" accept=".csv,text/csv">
+      <p class="hint">Columns: <code>date</code> (YYYY-MM-DD), <code>description</code>, <code>amount</code> (negative = money out).
+        Descriptions and amounts are sent to an AI model (OpenAI) to be categorised.</p>
+    </section>
+
+    <section aria-labelledby="h-budget">
+      <h2 id="h-budget">2. Your monthly budget</h2>
+      <form id="budget-form" novalidate>
+        <div id="budget-fields" class="fields"></div>
+        <button type="submit" id="analyse-btn">Analyse</button>
+      </form>
+      <p id="status" role="status" class="status"></p>
+    </section>
+
+    <section id="results" aria-labelledby="h-results" hidden>
+      <h2 id="h-results">3. Spending against budget</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th scope="col">Category</th><th scope="col" class="num">Actual</th>
+                <th scope="col" class="num">Budget</th><th scope="col" class="num">Variance</th></tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <p class="hint">Variance = actual &minus; budget. Positive (red) means over budget.</p>
+      <dl id="summary" class="summary"></dl>
+    </section>
+
+    <section id="review" aria-labelledby="h-review" hidden>
+      <h2 id="h-review">4. Needs review</h2>
+      <p id="review-intro"></p>
+      <ul id="review-list" class="review-list"></ul>
+    </section>
+
+    <section id="ask" aria-labelledby="h-ask" hidden>
+      <h2 id="h-ask">5. Ask a question</h2>
+      <form id="ask-form">
+        <label for="question">Your question</label>
+        <textarea id="question" rows="3" maxlength="1000"
+          placeholder="e.g. Where did I overspend, and how much did I save?"></textarea>
+        <button type="submit" id="ask-btn">Ask</button>
+      </form>
+      <div id="answer-box" hidden>
+        <div id="warning" class="warning" role="alert" hidden></div>
+        <p id="answer" class="answer"></p>
+        <p id="tools" class="hint"></p>
+      </div>
+    </section>
+  </main>
   <script src="app.js"></script>
 </body>
 </html>

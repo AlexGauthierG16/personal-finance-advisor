@@ -39,5 +39,15 @@
 - After the model's final answer, every number in it must appear in a successful tool result from the same run. Otherwise `AgentResult.answer` starts with a "Warning: these numbers could not be verified ..." line (followed by the original text) and `unverified_numbers` lists them as written.
 - Same value in another format is accepted: 208.10 = 208,10 = -208.10 = 1.234,56 = 1,234.56 (sign ignored; "1,234" may be 1234 or 1.234). Dates and numbers inside descriptions count, because they appear in tool results.
 - Error results are not a source of truth (they can echo text the model supplied). "1. " list markers at line start are ignored. The fixed step-limit message is not checked.
-- Strict by design: a number repeated from the user's own question (e.g. "is 200 too much?") or a count the model worked out ("3 items") is flagged unless a tool result contains it. Loosen later if this proves noisy.
+- Numbers that appear in the user's own question are also accepted (e.g. "is 200 too much?" -> "200"). A count the model works out itself ("3 items") is still flagged unless a tool result contains it. Caveat: a number echoed from the question is trusted, even if the model attaches a wrong claim to it.
 - This catches invented figures; it does not prove the number is attached to the right label (e.g. 8.10 described as the wrong category).
+
+## Web interface (backend/main.py, frontend/)
+- Endpoints: `POST /api/analyse` (CSV text + budget), `POST /api/review` (assign a category to a "Needs review" line), `POST /api/ask` (agent question), plus `/health`. Errors are `{"error": "..."}`: 400 bad input, 409 nothing analysed yet, 503 missing `OPENAI_API_KEY`/`OPENAI_MODEL`, 502 any other model failure (generic message; exception text is not echoed).
+- **Limit: the analysis lives in memory** (`main._STATE`). Single user, demo only: each upload replaces it, it is lost on restart, and two people using the server at once would overwrite each other. Needs a session id or storage before any real use.
+- The CSV is posted as JSON text (`file.text()` in the browser) instead of multipart, to avoid adding `python-multipart`. `parser.parse_csv_text` does the parsing (also strips a BOM); `parse_csv(path)` wraps it.
+- Limits: 1 MB, 300 transactions (one model call per statement, no batching yet).
+- Budget: the 7 spending categories, non-negative decimals sent as text; a missing category counts as 0.00, so its whole spend shows as over budget.
+- Manual review uses the same sign rule as the model's labels (no "Income" for money out, no expense category for money in); the message suggests "Other". Only "Needs review" lines can be reassigned. A genuine refund must go to "Other" for now.
+- The page does no arithmetic: every figure, including `over_budget`, comes from the API. Statement text is inserted with `textContent` only.
+- Verified with TestClient tests and fake models, and by running the real server with a fake model; not yet tried in a browser or against the real model.

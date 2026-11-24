@@ -276,3 +276,28 @@ def test_trailing_zeros_do_not_matter():
 
 def test_no_numbers_means_nothing_to_verify():
     assert agent.unverified_numbers("You are under budget.", []) == []
+
+
+# --- numbers the user typed in the question are accepted ---
+
+def test_number_from_question_is_accepted():
+    answer = "200 is lower than what you spent."
+    assert agent.unverified_numbers(answer, [], "Is 200 too much for groceries?") == []
+    assert agent.unverified_numbers(answer, [], "") == ["200"]
+
+
+def test_question_number_formatting_and_other_numbers():
+    q = "Can I afford 1.234,50 this month?"
+    assert agent.unverified_numbers("1,234.50 is a lot; also 77.", [], q) == ["77"]
+
+
+def test_question_number_accepted_end_to_end(monkeypatch, sept):
+    FakeModel(monkeypatch, [ask([call("variance")]), say("Groceries are 8.10 over, so 200 is exceeded.")])
+    result = run(sept, question="Is 200 too much for groceries?")
+    assert result.unverified_numbers == []
+
+
+def test_invented_number_still_flagged_with_question(monkeypatch, sept):
+    FakeModel(monkeypatch, [ask([call("variance")]), say("200 is exceeded; try 150.00 instead.")])
+    result = run(sept, question="Is 200 too much for groceries?")
+    assert result.unverified_numbers == ["150.00"]

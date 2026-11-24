@@ -81,13 +81,16 @@ def _values(token: str) -> set:
     return {Decimal(token)}
 
 
-def unverified_numbers(answer: str, tool_calls) -> list[str]:
-    """Numbers (as written) in `answer` that appear in no successful tool result.
+def unverified_numbers(answer: str, tool_calls, question: str = "") -> list[str]:
+    """Numbers (as written) in `answer` that appear in no successful tool result
+    and not in the user's own question.
 
     The same value in another format counts as found (208.10 = 208,10 = -208.10).
     Error results are ignored: they can echo text the model supplied.
     """
     known = set()
+    for token in NUMBER.findall(question):
+        known |= _values(token)
     for call in tool_calls:
         if "error" not in call["result"]:
             for token in NUMBER.findall(json.dumps(call["result"])):
@@ -158,7 +161,7 @@ def answer_question(question, transactions, categories, budget) -> AgentResult:
         if not calls:
             text = reply.get("content")
             if text:
-                missing = unverified_numbers(text, trace)
+                missing = unverified_numbers(text, trace, question)
                 if missing:
                     text = ("Warning: these numbers could not be verified against the data: "
                             + ", ".join(missing) + ".\n\n" + text)

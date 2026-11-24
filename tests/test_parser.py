@@ -43,3 +43,25 @@ def write(tmp_path, body):
 def test_bad_input_raises(tmp_path, body):
     with pytest.raises(ValueError):
         parse_csv(write(tmp_path, body))
+
+
+# --- parse_csv_text (used by the upload endpoint) ---
+
+from backend.parser import parse_csv_text  # noqa: E402
+
+
+def test_parse_csv_text_matches_parse_csv():
+    text = (DATA / "sample_sept.csv").read_text(encoding="utf-8")
+    assert parse_csv_text(text) == parse_csv(DATA / "sample_sept.csv")
+
+
+def test_parse_csv_text_accepts_bom():
+    txs = parse_csv_text("﻿date,description,amount\n2025-09-01,SHOP,-1.50\n")
+    assert [(t.description, t.amount) for t in txs] == [("SHOP", Decimal("-1.50"))]
+
+
+def test_parse_csv_text_bad_input_raises():
+    with pytest.raises(ValueError):
+        parse_csv_text("date,description,amount\n01/09/2025,SHOP,-1.00\n")
+    with pytest.raises(ValueError):
+        parse_csv_text("")
