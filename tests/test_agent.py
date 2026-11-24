@@ -115,7 +115,8 @@ def test_list_transactions_result(monkeypatch, sept):
     (res,) = tool_results(fake.calls[1][0])
     assert len(res["transactions"]) == 6
     assert res["total"] == "-208.10"
-    assert res["transactions"][0] == {"date": "2025-09-02", "description": "ESSELUNGA MILANO LORENTEGGIO", "amount": "-42.30"}
+    # no per-transaction date: dates are never sent to the model
+    assert res["transactions"][0] == {"description": "ESSELUNGA MILANO LORENTEGGIO", "amount": "-42.30"}
 
 
 def test_two_tool_calls_in_one_reply(monkeypatch, sept):
@@ -229,8 +230,8 @@ def test_numbers_from_error_results_do_not_count(monkeypatch, sept):
     assert run(sept).unverified_numbers == ["999"]
 
 
-def test_dates_and_description_numbers_from_tool_results_pass(monkeypatch, sept):
-    text = "On 2025-09-02 you paid 42.30 at Esselunga; POS 4421 needs review."
+def test_amounts_and_description_numbers_from_tool_results_pass(monkeypatch, sept):
+    text = "You paid 42.30 at Esselunga; POS 4421 needs review."
     FakeModel(monkeypatch, [ask([call("list_transactions", '{"category": "Groceries"}', id="a"),
                                  call("needs_review_items", id="b")]), say(text)])
     assert run(sept).unverified_numbers == []
@@ -313,3 +314,9 @@ def test_system_prompt_is_for_students():
     assert "concrete" in p and "own numbers" in p         # practical, based on their data
     assert "investment" in p                              # explicitly no investment advice
     assert "generic" in p                                 # no generic financial advice
+
+
+def test_a_date_in_the_answer_is_flagged_because_dates_are_never_sent(monkeypatch, sept):
+    FakeModel(monkeypatch, [ask([call("list_transactions", '{"category": "Groceries"}')]),
+                            say("On 2025-09-02 you paid 42.30 at Esselunga.")])
+    assert run(sept).unverified_numbers == ["2025", "09", "02"]

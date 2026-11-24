@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from backend import analysis, llm
+from backend import analysis, llm, privacy
 from backend.categorise import CATEGORIES
 
 MAX_STEPS = 5  # one step = one model call
@@ -111,7 +111,8 @@ def money(value: Decimal) -> str:
 
 
 def _tx(t) -> dict:
-    return {"date": t.date.isoformat(), "description": t.description, "amount": money(t.amount)}
+    # What the model sees: anonymised description and amount. No date, no raw description.
+    return {"description": privacy.anonymise(t.description), "amount": money(t.amount)}
 
 
 def _run_tool(name, args, transactions, categories, totals, budget) -> dict:

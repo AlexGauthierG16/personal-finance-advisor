@@ -307,3 +307,81 @@ def test_page_and_assets_are_served():
     assert page.status_code == 200 and "<html" in page.text
     assert client.get("/app.js").status_code == 200
     assert client.get("/style.css").status_code == 200
+
+
+# ---------------------------------------------------------------- /api/preview and privacy
+
+PRIVATE_CSV = (DATA / "sample_private.csv").read_text(encoding="utf-8")
+
+
+def preview(csv=SEPT_CSV):
+    return client.post("/api/preview", json={"csv": csv})
+
+
+def forbid_model(monkeypatch):
+    def boom(*args, **kwargs):
+        raise AssertionError("the model must not be called")
+    monkeypatch.setattr(llm, "categorise_with_model", boom)
+    monkeypatch.setattr(llm, "chat_with_tools", boom)
+
+
+def test_preview_shows_original_and_what_is_sent(monkeypatch):
+    forbid_model(monkeypatch)
+    r = preview(PRIVATE_CSV)
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["rows"]) == 16
+    assert body["masked_count"] == 10
+    second = body["rows"][1]
+    assert second == {"original": "BONIFICO DA ROSSI MARIO CAUSALE PAGAMENTO LEZIONI",
+                      "sent": "BONIFICO DA [NAME] CAUSALE PAGAMENTO LEZIONI", "masked": True}
+    first = body["rows"][0]
+    assert first == {"original": "ESSELUNGA MILANO LORENTEGGIO",
+                     "sent": "ESSELUNGA MILANO LORENTEGGIO", "masked": False}
+    assert all("amount" not in row and "date" not in row for row in body["rows"])
+
+
+def test_preview_of_a_clean_statement_masks_nothing(monkeypatch):
+    forbid_model(monkeypatch)
+    body = preview().json()
+    assert body["masked_count"] == 0
+    assert len(body["rows"]) == 25
+
+
+def test_preview_creates_no_state(monkeypatch):
+    forbid_model(monkeypatch)
+    preview(PRIVATE_CSV)
+    assert main._STATE == {}
+
+
+@pytest.mark.parametrize("csv", ["date,description,amount\n01/09/2025,SHOP,-1.00\n",
+                                 "date,description,amount\n", "", "x" * 1_000_001])
+def test_preview_rejects_bad_statements(csv):
+    r = preview(csv)
+    assert r.status_code == 400
+    assert "error" in r.json()
+
+
+def test_preview_too_many_rows():
+    rows = "".join(f"2025-09-01,SHOP {i},-1.00\n" for i in range(301))
+    assert preview("date,description,amount\n" + rows).status_code == 400
+
+
+def test_analyse_sends_only_anonymised_descriptions(monkeypatch):
+    sent = []
+
+    def capture(descriptions, categories):
+        sent.append(descriptions)
+        return "not json"
+    monkeypatch.setattr(llm, "categorise_with_model", capture)
+    r = analyse(PRIVATE_CSV, {})
+    assert r.status_code == 200
+    assert sent[0][1] == "BONIFICO DA [NAME] CAUSALE PAGAMENTO LEZIONI"
+    assert all(type(d) is str for d in sent[0])
+    joined = " ".join(sent[0]).upper()
+    for secret in ["ROSSI", "BIANCHI", "VERDI", "IT60X0542811101000000123456", "5555555555554444",
+                   "BNCNNA90A41F205Q", "EXAMPLE.COM"]:
+        assert secret not in joined
+    # the user's own view keeps the original text
+    items = r.json()["needs_review"]["items"]
+    assert items[1]["description"] == "BONIFICO DA ROSSI MARIO CAUSALE PAGAMENTO LEZIONI"

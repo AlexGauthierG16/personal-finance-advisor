@@ -102,20 +102,24 @@ def test_everything_needs_review_still_reconciles(monkeypatch, sept):
     assert totals[NEEDS_REVIEW] == D("-127.18")
 
 
-def test_model_receives_descriptions_amounts_and_categories(monkeypatch, sept):
+def test_model_receives_only_anonymised_descriptions_and_categories(monkeypatch, sept):
     txs, labels = sept
     seen = []
     fake_model(monkeypatch, answer(labels), seen)
     categorise(txs)
-    sent_txs, sent_categories = seen[0]
-    assert sent_txs == txs
+    sent_descriptions, sent_categories = seen[0]
+    # Sept has no personal data, so anonymised == original; what matters is plain strings only
+    assert sent_descriptions == [t.description for t in txs]
+    assert all(type(d) is str for d in sent_descriptions)
     assert tuple(sent_categories) == CATEGORIES
 
 
 def test_llm_payload_and_prompt():
-    payload = llm.build_payload(parse_csv(DATA / "sample_sept.csv"))
-    first = json.loads(payload)["transactions"][0]
-    assert first == {"id": 0, "description": "BONIFICO STIPENDIO CAFFE NAVIGLI", "amount": "1100.00"}
+    payload = llm.build_payload(["BONIFICO STIPENDIO CAFFE NAVIGLI", "SPOTIFY AB"])
+    parsed = json.loads(payload)
+    assert parsed["transactions"][0] == {"id": 0, "description": "BONIFICO STIPENDIO CAFFE NAVIGLI"}
+    assert parsed["transactions"][1] == {"id": 1, "description": "SPOTIFY AB"}
+    assert "amount" not in payload and "date" not in payload   # amounts and dates are never sent
     prompt = llm.build_system_prompt(CATEGORIES)
     assert all(c in prompt for c in CATEGORIES)
 

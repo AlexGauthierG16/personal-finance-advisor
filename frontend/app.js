@@ -165,6 +165,47 @@ function clearAnswer() {
   $("warning").hidden = true;
 }
 
+// ---- preview: what is sent to the AI ---------------------------------------
+
+let previewToken = 0; // ignore answers for a file the user has already replaced
+
+function renderPreview(data) {
+  const rows = $("preview-rows");
+  rows.replaceChildren();
+  for (const r of data.rows) {
+    const tr = el("tr");
+    if (r.masked) tr.classList.add("masked");
+    const sent = el("td", { className: "sent" }, r.sent);
+    if (r.masked) sent.append(el("span", { className: "masked-label" }, "masked"));
+    tr.append(el("td", {}, r.original), sent);
+    rows.append(tr);
+  }
+  $("preview-summary").textContent =
+    data.masked_count === 0
+      ? `${data.rows.length} descriptions. Nothing needed masking.`
+      : `${data.rows.length} descriptions; personal data was masked in ${data.masked_count} of them.`;
+  $("preview").hidden = false;
+}
+
+async function onFileChosen() {
+  const token = ++previewToken;
+  const button = $("analyse-btn");
+  button.disabled = true;
+  $("preview").hidden = true;
+  const file = $("file").files[0];
+  if (!file) return setStatus("");
+  setStatus("Checking what would be sent to the AI\u2026");
+  try {
+    const data = await post("/api/preview", { csv: await file.text() });
+    if (token !== previewToken) return;
+    renderPreview(data);
+    button.disabled = false;
+    setStatus("Check what is sent to the AI above, set your budget, then click Analyse.");
+  } catch (e) {
+    if (token === previewToken) setStatus(e.message, true);
+  }
+}
+
 // ---- actions ---------------------------------------------------------------
 
 async function analyse(event) {
@@ -250,5 +291,6 @@ for (const button of document.querySelectorAll(".example")) {
 }
 
 buildBudgetForm();
+$("file").addEventListener("change", onFileChosen);
 $("budget-form").addEventListener("submit", analyse);
 $("ask-form").addEventListener("submit", ask);

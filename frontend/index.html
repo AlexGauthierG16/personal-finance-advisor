@@ -18,7 +18,23 @@
       <label for="file">CSV file</label>
       <input type="file" id="file" accept=".csv,text/csv">
       <p class="hint">Columns: <code>date</code> (YYYY-MM-DD), <code>description</code>, <code>amount</code> (negative = money out).
-        Descriptions and amounts are sent to an AI model (OpenAI) to be categorised.</p>
+        Only anonymised descriptions are sent to an AI model (OpenAI) to be categorised; you see exactly what is sent below.</p>
+    </section>
+
+    <section id="preview" aria-labelledby="h-preview" hidden>
+      <h2 id="h-preview">What we send to the AI</h2>
+      <p class="note"><strong>Amounts and dates are never sent.</strong></p>
+      <p id="preview-summary" class="hint"></p>
+      <div class="table-wrap preview-wrap" tabindex="0" role="region" aria-label="Descriptions before and after anonymising">
+        <table>
+          <thead>
+            <tr><th scope="col">Original <span class="hint">(only you see this)</span></th>
+                <th scope="col">Sent to the AI</th></tr>
+          </thead>
+          <tbody id="preview-rows"></tbody>
+        </table>
+      </div>
+      <p class="hint">When you ask a question, the AI also sees your category totals and amounts, and anonymised descriptions of the transactions it looks up.</p>
     </section>
 
     <section aria-labelledby="h-budget">
@@ -26,7 +42,7 @@
       <p class="hint">Starting values for a student living in Milan. Change them to match your life.</p>
       <form id="budget-form" novalidate>
         <div id="budget-fields" class="fields"></div>
-        <button type="submit" id="analyse-btn">Analyse</button>
+        <button type="submit" id="analyse-btn" disabled>Analyse</button>
       </form>
       <p id="status" role="status" class="status"></p>
     </section>

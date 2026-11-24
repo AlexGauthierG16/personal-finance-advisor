@@ -1,7 +1,7 @@
 """Assigns a category to each transaction: asks llm.py, then validates the answer."""
 import json
 
-from backend import llm
+from backend import llm, privacy
 
 INCOME = "Income"
 TRANSFER = "Transfer to own account"
@@ -97,5 +97,7 @@ def check_signs(labels, transactions) -> list[str]:
 
 def categorise(transactions) -> list[str]:
     """One category per transaction (same order). The model only returns labels, never amounts."""
-    raw = llm.categorise_with_model(transactions, CATEGORIES)
+    # Only anonymised descriptions leave this function: no amounts, no dates, no raw text.
+    descriptions = [privacy.anonymise(t.description) for t in transactions]
+    raw = llm.categorise_with_model(descriptions, CATEGORIES)
     return check_signs(parse_model_answer(raw, len(transactions)), transactions)

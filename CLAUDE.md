@@ -17,6 +17,7 @@
 - `backend/main.py`: entry point; serves the page and the API on one port.
 - `backend/llm.py`: the only file that calls the model (categorising and tool calling).
 - `backend/parser.py`: reads statements into transactions.
+- `backend/privacy.py`: masks personal data (IBAN, card, codice fiscale, email, phone, names after transfer words) in descriptions before anything goes to the model.
 - `backend/categorise.py`: gets categories from llm.py and validates the structured output.
 - `backend/analysis.py`: all totals, variances and savings, in code.
 - `backend/agent.py`: runs the tool-calling loop (max 5 steps) and executes the tools that wrap analysis.py; the API call itself is in llm.py.
@@ -40,6 +41,7 @@
 - No new frameworks, no database, no features nobody asked for.
 - Never edit a test or an expected result to make it pass. If a test seems wrong, say so and ask.
 - Never call the model outside `backend/llm.py`.
+- Never send raw descriptions to the model; always go through privacy.py.
 - Never read, print or commit `.env`. Never commit real bank statements.
 - Never invent transactions, amounts, dates or balances.
 - Never combine currencies without an agreed conversion rule.
@@ -47,5 +49,6 @@
 ## Mistakes we have seen
 - Plain `pytest` could not import `backend`; `pytest.ini` fixes the path. Always run tests from the repo root.
 - `sed -i` without '' fails on macOS; use Python or the edit tool to change files.
+- Claude tried to weaken a privacy test (allow part of a name to leak) to make it pass. Fix the code, never the test.
 ## Human check of the ground truth
 - 24 Nov: Alex checked all 25 rows of data/sample_sept_labels.csv by hand. 0 corrections needed.

@@ -1,4 +1,4 @@
-# FastAPI app: serves frontend/ at / plus the API (/api/analyse, /api/review, /api/ask) and GET /health, on one port.
+# FastAPI app: serves frontend/ at / plus the API (/api/preview, /api/analyse, /api/review, /api/ask) and GET /health, on one port.
 import os
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from backend import analysis, categorise
+from backend import analysis, categorise, privacy
 from backend.agent import answer_question, money
 from backend.categorise import CATEGORIES, EXPENSE_CATEGORIES, INCOME, NEEDS_REVIEW
 from backend.parser import parse_csv_text
@@ -24,6 +24,10 @@ app = FastAPI()
 # The current analysis, in memory. Single user, demo only: replaced by every /api/analyse,
 # lost on restart, not safe for several users at once (see NOTES.md).
 _STATE: dict = {}
+
+
+class PreviewRequest(BaseModel):
+    csv: str
 
 
 class AnalyseRequest(BaseModel):
@@ -112,18 +116,34 @@ def _analysis_payload() -> dict:
     }
 
 
-@app.post("/api/analyse")
-def api_analyse(req: AnalyseRequest):
-    if len(req.csv) > MAX_CSV_CHARS:
+def _read_statement(csv_text: str) -> list:
+    """Parse an uploaded statement with the size and row limits; raises ApiError(400)."""
+    if len(csv_text) > MAX_CSV_CHARS:
         raise ApiError(400, "The file is too large (limit 1 MB).")
     try:
-        transactions = parse_csv_text(req.csv)
+        transactions = parse_csv_text(csv_text)
     except ValueError as e:
         raise ApiError(400, f"Could not read the statement: {e}") from e
     if not transactions:
         raise ApiError(400, "The statement has no transactions.")
     if len(transactions) > MAX_ROWS:
         raise ApiError(400, f"Too many transactions ({len(transactions)}); the limit is {MAX_ROWS}.")
+    return transactions
+
+
+@app.post("/api/preview")
+def api_preview(req: PreviewRequest):
+    """What would be sent to the AI for each row. No model call, nothing stored."""
+    rows = []
+    for t in _read_statement(req.csv):
+        sent = privacy.anonymise(t.description)
+        rows.append({"original": t.description, "sent": sent, "masked": sent != t.description})
+    return {"rows": rows, "masked_count": sum(r["masked"] for r in rows)}
+
+
+@app.post("/api/analyse")
+def api_analyse(req: AnalyseRequest):
+    transactions = _read_statement(req.csv)
     budget = _parse_budget(req.budget)
     labels = _model_call(categorise.categorise, transactions)
     _STATE.clear()

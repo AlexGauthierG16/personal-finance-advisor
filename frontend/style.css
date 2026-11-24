@@ -125,3 +125,10 @@ tr.over { background: var(--over-bg); }
   margin-top: 0;
   padding: .3rem .75rem;
 }
+
+.note { margin: 0 0 .25rem; }
+.preview-wrap { max-height: 18rem; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; }
+#preview td, #preview th { word-break: break-word; vertical-align: top; }
+#preview thead th { position: sticky; top: 0; background: var(--card); }
+#preview tr.masked td.sent { background: var(--warn-bg); }
+.masked-label { font-size: .75rem; font-weight: 600; margin-left: .5em; color: var(--muted); }
