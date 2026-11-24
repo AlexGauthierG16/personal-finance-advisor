@@ -301,3 +301,15 @@ def test_invented_number_still_flagged_with_question(monkeypatch, sept):
     FakeModel(monkeypatch, [ask([call("variance")]), say("200 is exceeded; try 150.00 instead.")])
     result = run(sept, question="Is 200 too much for groceries?")
     assert result.unverified_numbers == ["150.00"]
+
+
+# --- student-focused system prompt ---
+
+def test_system_prompt_is_for_students():
+    p = agent.SYSTEM_PROMPT
+    assert "student" in p and "tight budget" in p
+    assert "5 sentences" in p
+    assert "plain" in p                                   # plain language
+    assert "concrete" in p and "own numbers" in p         # practical, based on their data
+    assert "investment" in p                              # explicitly no investment advice
+    assert "generic" in p                                 # no generic financial advice

@@ -115,3 +115,13 @@ tr.over { background: var(--over-bg); }
   padding: .6rem .8rem;
   font-weight: 600;
 }
+
+.examples { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: .75rem; }
+.examples .example {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  font-weight: 500;
+  margin-top: 0;
+  padding: .3rem .75rem;
+}

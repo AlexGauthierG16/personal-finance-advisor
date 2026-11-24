@@ -51,3 +51,9 @@
 - Manual review uses the same sign rule as the model's labels (no "Income" for money out, no expense category for money in); the message suggests "Other". Only "Needs review" lines can be reassigned. A genuine refund must go to "Other" for now.
 - The page does no arithmetic: every figure, including `over_budget`, comes from the API. Statement text is inserted with `textContent` only.
 - Verified with TestClient tests and fake models, and by running the real server with a fake model; not yet tried in a browser or against the real model.
+
+## Student focus
+- Page title "Spend Analyzer, for students"; the privacy note stays under the upload box.
+- Budget defaults (EUR/month, my rough estimates for a student in Milan, not sourced; editable): Rent 600, Groceries 200, Eating out 100, Transport 30, Subscriptions 20, Shopping 50, Other 40. Worth checking against real numbers from the team.
+- Agent prompt: student on a tight budget, plain language, at most 5 sentences, concrete suggestions from their own numbers only, no generic or investment advice. The 5-sentence limit is a prompt instruction, not enforced in code.
+- Three clickable example questions fill the question box.

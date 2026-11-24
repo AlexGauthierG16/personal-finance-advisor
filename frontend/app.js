@@ -2,14 +2,15 @@
 // Every figure shown comes from the API (computed in Python); this file only displays it.
 "use strict";
 
+// Starting budget for a student in Milan (EUR per month). Rough estimates; the user edits them.
 const BUDGET_DEFAULTS = [
-  ["Rent", "650"],
+  ["Rent", "600"],          // a room in a shared flat
   ["Groceries", "200"],
-  ["Eating out", "120"],
-  ["Transport", "40"],
-  ["Subscriptions", "15"],
-  ["Shopping", "60"],
-  ["Other", "30"],
+  ["Eating out", "100"],
+  ["Transport", "30"],      // monthly public transport pass
+  ["Subscriptions", "20"],
+  ["Shopping", "50"],
+  ["Other", "40"],
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -239,6 +240,13 @@ function showAnswer(data) {
     ? "Figures looked up with: " + data.tools_used.join(", ")
     : "No figures were looked up for this answer.";
   $("answer-box").hidden = false;
+}
+
+for (const button of document.querySelectorAll(".example")) {
+  button.addEventListener("click", () => {
+    $("question").value = button.textContent;
+    $("question").focus();
+  });
 }
 
 buildBudgetForm();
