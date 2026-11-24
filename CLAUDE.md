@@ -47,3 +47,5 @@
 ## Mistakes we have seen
 - Plain `pytest` could not import `backend`; `pytest.ini` fixes the path. Always run tests from the repo root.
 - `sed -i` without '' fails on macOS; use Python or the edit tool to change files.
+## Human check of the ground truth
+- 24 Nov: Alex checked all 25 rows of data/sample_sept_labels.csv by hand. 0 corrections needed.
