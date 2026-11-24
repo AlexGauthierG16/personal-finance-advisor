@@ -11,6 +11,7 @@
 - Install: `pip install -r requirements.txt`
 - Start: `uvicorn backend.main:app --reload`; page at http://127.0.0.1:8000, `/health` returns `{"ok": true}`
 - Tests: `pytest` from the repo root
+- Evaluate the model (needs `OPENAI_API_KEY` and `OPENAI_MODEL` in `.env`; makes 3 real API calls): `python -m eval.run_eval` from the repo root; the report is saved to `eval/results.md`
 
 ## Where things live
 - `backend/main.py`: entry point; serves the page and the API on one port.
@@ -21,6 +22,7 @@
 - `backend/agent.py`: runs the tool-calling loop (max 5 steps) and executes the tools that wrap analysis.py; the API call itself is in llm.py.
 - `frontend/`: plain HTML, CSS and JavaScript, no framework.
 - `data/`: synthetic sample statements only.
+- `eval/`: `run_eval.py` runs the model 3 times on the Sept sample and compares it with the hand labels.
 - `tests/`: one test per feature, with fixtures whose expected totals are known.
 - `NOTES.md`: decisions, limitations, ideas for later.
 

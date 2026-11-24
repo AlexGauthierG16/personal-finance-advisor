@@ -57,3 +57,10 @@
 - Budget defaults (EUR/month, my rough estimates for a student in Milan, not sourced; editable): Rent 600, Groceries 200, Eating out 100, Transport 30, Subscriptions 20, Shopping 50, Other 40. Worth checking against real numbers from the team.
 - Agent prompt: student on a tight budget, plain language, at most 5 sentences, concrete suggestions from their own numbers only, no generic or investment advice. The 5-sentence limit is a prompt instruction, not enforced in code.
 - Three clickable example questions fill the question box.
+
+## Evaluation (eval/run_eval.py)
+- `python -m eval.run_eval` categorises `data/sample_sept.csv` 3 times with the real model and compares each run with `data/sample_sept_labels.csv`. It prints the report and saves `eval/results.md` (model name and UTC date included; synthetic data only).
+- Metrics: matching % overall, per run and per hand-label category (pooled over runs; `n/a` where Sept has no such transaction); mismatches per transaction with each run's answer; consistency = share of transactions with the same category in all 3 runs (right or wrong); reconciliation = category totals equal the statement total in every run, plus the amount each run put in "Needs review". Percentages are computed from counts with Decimal.
+- "Target met" means at least 90% matching (README goal) and exact totals in all runs.
+- Stops with exit code 1 and writes nothing if OPENAI_API_KEY / OPENAI_MODEL is missing or a model call fails. Tests use the fake model only.
+- Sept is the only labelled month, so this measures 25 transactions: treat the percentages as a rough signal. No real-model result exists yet.
