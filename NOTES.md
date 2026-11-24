@@ -12,3 +12,16 @@
 - Totals are signed like the statement. `spend()` flips to positive spend; `variance = actual - budget` (positive = over budget). A category present on only one side counts as 0 on the other.
 - Savings = income - expenses, excluding "Transfer to own account". "Needs review" amounts count as expenses (conservative) and are also reported separately via `needs_review_total`. Sept savings = -27.18.
 - `check_totals` raises if the category totals do not sum to the statement total.
+
+## Model categorisation
+- `llm.categorise_with_model` is the only code that imports `openai` and reads `OPENAI_API_KEY` / `OPENAI_MODEL` (via python-dotenv). It returns raw text; `categorise.parse_model_answer` validates it.
+- Wire format: sends `{id, description, amount}` per transaction (id = list index; dates are not sent); expects `{"categories": [{"id": 0, "category": "Rent"}, ...]}`.
+- Bad content is downgraded, never trusted: invalid JSON or wrong shape -> all "Needs review"; unknown category, missing id, duplicated id -> that line only. The model never returns amounts, so amounts cannot change.
+- Infrastructure problems (missing env var, network/API error) raise instead of becoming "Needs review", so config errors are not hidden.
+- Privacy: descriptions and amounts go to OpenAI. Fine for synthetic samples; decide consciously before using real statements.
+- Limitations / ideas: one API call per statement (no batching for long statements); no live evaluation against `sample_sept_labels.csv` yet.
+
+## Sign check (categorise.check_signs)
+- After validation, a negative amount labelled "Income", or a positive amount labelled Rent/Groceries/Eating out/Transport/Subscriptions/Shopping, becomes "Needs review".
+- "Other" and "Transfer to own account" are sign-neutral (money back from savings, unknown refunds); a zero amount is neutral.
+- Side effect: a genuine refund labelled e.g. "Groceries" lands in "Needs review" until we decide how to treat refunds.
