@@ -84,22 +84,106 @@ function signed(value) {
   return value.startsWith("-") || value === "0.00" ? value : "+" + value;
 }
 
+function fmt2(value) {
+  // Display only: pad an API amount to two decimals ("600" -> "600.00", "-40" -> "-40.00").
+  // String work, no arithmetic; anything else (e.g. more than two decimals) is shown unchanged.
+  const m = /^(-?\d+)(?:\.(\d+))?$/.exec(String(value));
+  if (!m) return String(value);
+  const decimals = m[2] || "";
+  return decimals.length >= 2 ? m[0] : `${m[1]}.${decimals.padEnd(2, "0")}`;
+}
+
+// ---- chart: budget vs actual (plain SVG; the only maths is geometry) -------
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const CHART = { width: 420, left: 8, right: 396, rowHeight: 46, barY: 22, barHeight: 12, radius: 4,
+                tickTop: 18, tickHeight: 20 };
+
+function svgEl(tag, attrs = {}, text = "") {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value);
+  if (text !== "") node.textContent = text;
+  return node;
+}
+
+function chartNumber(text) {
+  // For positions only: the labels always print the API's own strings.
+  const n = Number(text);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function barPath(x, y, w, h, radius) {
+  // Square at the baseline (left), rounded at the data end (right).
+  const r = Math.min(radius, w, h / 2);
+  return `M${round2(x)} ${y}h${round2(w - r)}a${r} ${r} 0 0 1 ${r} ${r}v${h - 2 * r}` +
+         `a${r} ${r} 0 0 1 ${-r} ${r}h${-round2(w - r)}z`;
+}
+
+function renderChart(rows) {
+  const c = CHART;
+  const plotWidth = c.right - c.left;
+  const largest = Math.max(0, ...rows.flatMap((r) => [chartNumber(r.actual), chartNumber(r.budget)])) || 1;
+  const xAt = (amount) => c.left + (plotWidth * chartNumber(amount)) / largest;
+  const height = rows.length * c.rowHeight;
+
+  const svg = svgEl("svg", {
+    viewBox: `0 0 ${c.width} ${height}`,
+    role: "img",
+    "aria-label": "Bar chart of actual spending against budget for each category. The table above has the same figures.",
+  });
+  svg.append(svgEl("line", { class: "chart-baseline", x1: c.left, x2: c.left, y1: 0, y2: height }));
+
+  rows.forEach((r, i) => {
+    const y = i * c.rowHeight;
+    const g = svgEl("g", { class: "chart-row" });
+    g.append(svgEl("title", {},
+      `${r.category}: actual ${fmt2(r.actual)}, budget ${fmt2(r.budget)}, variance ${signed(fmt2(r.variance))}, ` +
+      (r.over_budget ? "over budget" : "within budget")));
+    g.append(svgEl("rect", { class: "chart-hit", x: 0, y, width: c.width, height: c.rowHeight }));
+    g.append(svgEl("text", { class: "chart-category", x: c.left, y: y + 14 }, r.category));
+    const amounts = `${fmt2(r.actual)} / ${fmt2(r.budget)}` +
+      (r.over_budget ? ` (${signed(fmt2(r.variance))} over)` : "");
+    g.append(svgEl("text", { class: "chart-amounts", x: c.right, y: y + 14, "text-anchor": "end" }, amounts));
+
+    const barWidth = xAt(r.actual) - c.left;
+    if (barWidth > 0) {
+      g.append(svgEl("path", {
+        class: r.over_budget ? "bar-over" : "bar-under",
+        d: barPath(c.left, y + c.barY, barWidth, c.barHeight, c.radius),
+      }));
+    }
+    const tickX = round2(xAt(r.budget));
+    const tick = { x1: tickX, x2: tickX, y1: y + c.tickTop, y2: y + c.tickTop + c.tickHeight };
+    g.append(svgEl("line", { class: "tick-halo", ...tick }));
+    g.append(svgEl("line", { class: "tick", ...tick }));
+    svg.append(g);
+  });
+  $("chart").replaceChildren(svg);
+}
+// ---- end chart ---------------------------------------------------------------
+
 function renderResults(data) {
   const rows = $("rows");
   rows.replaceChildren();
   for (const r of data.rows) {
     const tr = el("tr");
     if (r.over_budget) tr.classList.add("over");
-    const variance = el("td", { className: "num variance" }, signed(r.variance));
+    const variance = el("td", { className: "num variance" }, signed(fmt2(r.variance)));
     if (r.over_budget) variance.append(el("span", { className: "over-label" }, "over"));
     tr.append(
       el("th", { scope: "row" }, r.category),
-      el("td", { className: "num" }, r.actual),
-      el("td", { className: "num" }, r.budget),
+      el("td", { className: "num" }, fmt2(r.actual)),
+      el("td", { className: "num" }, fmt2(r.budget)),
       variance,
     );
     rows.append(tr);
   }
+
+  renderChart(data.rows);
 
   const summary = $("summary");
   summary.replaceChildren();

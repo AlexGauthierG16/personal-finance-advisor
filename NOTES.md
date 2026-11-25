@@ -88,3 +88,10 @@
   - realistic set: `data/demo_nov.csv` vs `data/demo_nov_labels.csv` (70 transactions, with personal data, refunds and unclear lines)
 - All files are read and validated before the first model call, so a labels file that does not match its statement stops the run with no API cost. A model failure names the set it happened in and saves nothing.
 - Hand totals used by the tests for demo_nov: statement total -410.06 (1,159.95 in, 1,570.01 out); label counts Groceries 14, Eating out 24, Needs review 3. The labels files are ground truth and were not changed.
+
+## Budget vs actual chart (frontend)
+- Plain SVG drawn in `app.js` (`renderChart`, called from `renderResults`), under the results table; the table stays. One row per table row: a bar for actual, a tick for budget, blue (`--chart-under`) when under budget and orange (`--chart-over`) when over, using the API's `over_budget` flag. Labels print the API's own strings (`208.10 / 200 (+8.10 over)`); the word "over" means colour is not the only cue. The table still shows over-budget in red.
+- The only maths in JS is geometry: bar and tick positions are scaled against the largest actual/budget value (bad or zero values give an empty bar, no NaN).
+- Colours are the reference palette's blue and orange (validator: pass in light and dark against the page's card surfaces); dark mode swaps the CSS variables.
+- Checked outside a browser: bar widths and tick positions proportional to the API values, over/under classes, zero and bad inputs, with the chart code run against a fake DOM. Not yet looked at in a real browser: check the right-aligned amount labels at phone width.
+- Money display: the API returns amounts as typed (a budget of `600` comes back as `600`, a variance as `-40`). The page pads amounts to two decimals with `fmt2()` in the table and the chart (labels and tooltips): string padding only, no arithmetic; amounts with more than two decimals are shown unchanged. The API is unchanged. The chart keeps a 24-unit right margin (and `overflow: visible`) so the right-aligned amount labels are not cut off.
