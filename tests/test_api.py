@@ -442,3 +442,179 @@ def test_ask_quoting_the_budget_is_verified(monkeypatch, analysed):
     assert body["warning"] is False
     assert body["unverified_numbers"] == []
     assert body["numbers_checked"] == 3
+
+
+# ---------------------------------------------------------------- memory: budget and savings
+
+from backend import user_state  # noqa: E402
+
+OCT_CSV = (DATA / "sample_oct.csv").read_text(encoding="utf-8")
+TWO_MONTHS = "date,description,amount\n2025-09-30,SHOP A,-1.00\n2025-10-01,SHOP B,-2.00\n"
+SAVED_BUDGET = {"Rent": "650.00", "Groceries": "200.00", "Eating out": "120.00", "Transport": "0.00",
+                "Subscriptions": "0.00", "Shopping": "0.00", "Other": "0.00"}
+
+
+def memory():
+    r = client.get("/api/memory")
+    assert r.status_code == 200
+    return r.json()
+
+
+def oct_labels(descriptions):
+    """October has no labels file: salary is Income, the savings transfer is a transfer, rest Other.
+    Hand result: savings = 1100.00 - (1266.67 - 150.00) = -16.67."""
+    return model_answer([
+        "Income" if d.startswith("BONIFICO STIPENDIO")
+        else "Transfer to own account" if d.startswith("TRASFERIMENTO") else "Other"
+        for d in descriptions])
+
+
+def fake_october(monkeypatch):
+    monkeypatch.setattr(llm, "categorise_with_model", lambda descriptions, categories: oct_labels(descriptions))
+
+
+def test_memory_is_empty_at_first():
+    assert memory() == {"budget": None, "saved_so_far": "0.00", "months": 0, "by_month": {}}
+
+
+def test_analyse_saves_the_budget_and_the_month(analysed):
+    assert analysed["memory"] == {"budget": SAVED_BUDGET, "saved_so_far": "-27.18", "months": 1,
+                                  "by_month": {"2025-09": "-27.18"}, "month": "2025-09"}
+    assert memory() == {k: v for k, v in analysed["memory"].items() if k != "month"}
+    on_disk = json.loads(user_state.STATE_PATH.read_text(encoding="utf-8"))
+    assert on_disk["months"] == {"2025-09": "-27.18"} and on_disk["budget"] == SAVED_BUDGET
+
+
+def test_same_month_twice_counts_once_and_an_edited_budget_is_saved(monkeypatch, labels):
+    fake_categoriser(monkeypatch, model_answer(labels))
+    analyse(budget=BUDGET)
+    r = analyse(budget={**BUDGET, "Rent": "700.00"})
+    assert r.status_code == 200
+    m = memory()
+    assert m["months"] == 1 and m["saved_so_far"] == "-27.18"
+    assert m["budget"]["Rent"] == "700.00" and m["budget"]["Groceries"] == "200.00"
+
+
+def test_two_different_months_add_up(monkeypatch, labels):
+    fake_categoriser(monkeypatch, model_answer(labels))
+    analyse()
+    fake_october(monkeypatch)
+    r = analyse(OCT_CSV)
+    assert r.status_code == 200
+    assert r.json()["memory"]["month"] == "2025-10"
+    m = memory()
+    assert m["saved_so_far"] == "-43.85"                    # -27.18 + -16.67
+    assert m["months"] == 2
+    assert m["by_month"] == {"2025-09": "-27.18", "2025-10": "-16.67"}
+    analyse(OCT_CSV)                                        # October again: still counted once
+    assert memory()["saved_so_far"] == "-43.85" and memory()["months"] == 2
+
+
+def test_a_review_that_changes_savings_updates_the_month(analysed):
+    assert memory()["saved_so_far"] == "-27.18"
+    r = review(9, "Transfer to own account")               # PAYPAL -15.00 no longer counts as spending
+    assert r.status_code == 200
+    assert r.json()["savings"] == "-12.18"                  # 1100.00 - (1127.18 - 15.00)
+    assert r.json()["memory"]["by_month"] == {"2025-09": "-12.18"}
+    assert memory()["saved_so_far"] == "-12.18" and memory()["months"] == 1
+    review(13, "Shopping")                                  # stays spending: figure unchanged
+    assert memory()["saved_so_far"] == "-12.18"
+
+
+def test_a_review_that_keeps_savings_leaves_the_month_alone(analysed):
+    review(9, "Shopping")
+    assert memory()["saved_so_far"] == "-27.18"
+
+
+def test_a_statement_spanning_two_months_is_refused(monkeypatch):
+    forbid_model(monkeypatch)
+    for call in (lambda: analyse(TWO_MONTHS), lambda: preview(TWO_MONTHS)):
+        r = call()
+        assert r.status_code == 400
+        error = r.json()["error"]
+        assert "2025-09" in error and "2025-10" in error and "2 months" in error
+    assert memory()["months"] == 0 and memory()["budget"] is None
+    assert main._STATE == {}
+
+
+def test_failed_analyses_save_nothing(monkeypatch):
+    fake_categoriser(monkeypatch, "{}")
+    assert analyse("date,description,amount\n01/09/2025,SHOP,-1.00\n").status_code == 400
+    assert analyse(budget={"Rent": "-1"}).status_code == 400
+
+    def boom(descriptions, categories):
+        raise ConnectionError("down")
+    monkeypatch.setattr(llm, "categorise_with_model", boom)
+    assert analyse().status_code == 502
+    assert memory() == {"budget": None, "saved_so_far": "0.00", "months": 0, "by_month": {}}
+    assert not user_state.STATE_PATH.exists()
+
+
+def test_a_missing_api_key_saves_nothing(monkeypatch):
+    no_key(monkeypatch)
+    assert analyse().status_code == 503
+    assert memory() == {"budget": None, "saved_so_far": "0.00", "months": 0, "by_month": {}}
+    assert not user_state.STATE_PATH.exists()
+
+
+def test_a_write_failure_is_a_clear_error_not_a_crash(monkeypatch, labels):
+    fake_categoriser(monkeypatch, model_answer(labels))
+
+    def disk_full(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr(user_state, "record_month", disk_full)
+    r = analyse()
+    assert r.status_code == 500
+    assert "save" in r.json()["error"].lower()
+
+
+def test_reset_clears_the_memory_and_the_analysis(analysed):
+    assert memory()["months"] == 1
+    r = client.post("/api/reset")
+    assert r.status_code == 200
+    assert r.json() == {"budget": None, "saved_so_far": "0.00", "months": 0, "by_month": {}}
+    assert memory() == r.json()
+    assert not user_state.STATE_PATH.exists()
+    assert main._STATE == {}
+    assert review(9, "Shopping").status_code == 409         # nothing to review: and nothing re-saved
+    assert ask().status_code == 409
+    assert memory()["months"] == 0
+
+
+def test_analysing_again_after_a_reset_starts_from_zero(monkeypatch, labels):
+    fake_categoriser(monkeypatch, model_answer(labels))
+    analyse()
+    client.post("/api/reset")
+    assert analyse().status_code == 200
+    assert memory()["months"] == 1 and memory()["saved_so_far"] == "-27.18"
+
+
+def test_reset_with_nothing_saved_is_fine():
+    r = client.post("/api/reset")
+    assert r.status_code == 200 and r.json()["months"] == 0
+
+
+def test_the_saved_history_never_reaches_the_model(monkeypatch, labels):
+    fake_categoriser(monkeypatch, model_answer(labels))
+    analyse()
+    fake_october(monkeypatch)
+    analyse(OCT_CSV)
+    calls = fake_agent(monkeypatch, [tool_call("savings"), text("Savings are -16.67.")])
+    body = ask().json()
+    assert body["warning"] is False
+    sent = json.dumps(calls)
+    assert "-16.67" in sent                                  # this month's own figure, as before
+    for private in ["-43.85", "-27.18", "2025-09", "2025-10", "saved_so_far", "by_month", "user_state"]:
+        assert private not in sent, private
+
+
+def test_the_running_total_is_not_part_of_what_categorising_sends(monkeypatch):
+    sent = []
+
+    def capture(descriptions, categories):
+        sent.append(descriptions)
+        return oct_labels(descriptions)
+    monkeypatch.setattr(llm, "categorise_with_model", capture)
+    user_state.record_month("2025-08", D("123.45"))
+    analyse(OCT_CSV)
+    assert "123.45" not in json.dumps(sent)

@@ -13,6 +13,11 @@
       <p class="lead">Upload your bank statement, set your monthly budget, and see where your money goes. All amounts are in EUR.</p>
     </header>
 
+    <div id="memory-strip" class="memory-strip" hidden>
+      <span id="memory-text"></span>
+      <button type="button" id="reset-btn" class="small">Reset my data</button>
+    </div>
+
     <section aria-labelledby="h-upload">
       <h2 id="h-upload">1. Your statement</h2>
       <label for="file">CSV file</label>
@@ -69,6 +74,8 @@
         <div id="chart"></div>
       </figure>
       <dl id="summary" class="summary"></dl>
+      <p id="saved-so-far" class="saved"></p>
+      <p id="saved-hint" class="hint"></p>
     </section>
 
     <section id="review" aria-labelledby="h-review" hidden>

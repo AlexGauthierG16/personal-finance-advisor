@@ -70,3 +70,15 @@ def transactions_in_category(transactions, categories, category) -> list:
     if len(categories) != len(transactions):
         raise ValueError(f"{len(categories)} labels for {len(transactions)} transactions")
     return [t for t, c in zip(transactions, categories) if c == category]
+
+
+def statement_month(transactions) -> str:
+    """The month ("YYYY-MM") a statement covers; raises ValueError if it covers none or several."""
+    months = sorted({f"{t.date.year:04d}-{t.date.month:02d}" for t in transactions})
+    if not months:
+        raise ValueError("The statement has no transactions.")
+    if len(months) > 1:
+        shown = ", ".join(months[:6]) + (" ..." if len(months) > 6 else "")
+        raise ValueError(f"This statement covers {len(months)} months ({shown}). "
+                         "Upload one month at a time so each month is counted once.")
+    return months[0]

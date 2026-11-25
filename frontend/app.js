@@ -29,13 +29,21 @@ function setStatus(message, isError = false) {
 }
 
 async function post(url, body) {
+  return request(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+async function get(url) {
+  return request(url, { method: "GET" });
+}
+
+async function request(url, options) {
   let response;
   try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    response = await fetch(url, options);
   } catch (e) {
     throw new Error("Could not reach the server. Is it running?");
   }
@@ -238,9 +246,70 @@ function renderReview(data) {
   }
 }
 
+// ---- memory: saved budget and running savings (kept by the server in a local file) ----
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+function renderMemory(memory) {
+  // The "Your data" strip: only shown when something is saved.
+  const saved = memory.budget !== null || memory.months > 0;
+  $("memory-strip").hidden = !saved;
+  if (!saved) return;
+  $("memory-text").textContent = memory.months > 0
+    ? `Remembered on this computer: your budget and ${plural(memory.months, "month")} of savings.`
+    : "Remembered on this computer: your budget.";
+}
+
+function renderSaved(memory) {
+  const line = $("saved-so-far");
+  line.replaceChildren();
+  const amount = el("span", { className: memory.saved_so_far.startsWith("-") ? "negative" : "" },
+                    `${fmt2(memory.saved_so_far)} \u20ac`);
+  line.append("Saved so far: ", amount, ` over ${plural(memory.months, "month")}`);
+  $("saved-hint").textContent =
+    `This statement counts as ${memory.month}. Uploading it again replaces it; it is never added twice.`;
+}
+
+function fillBudget(budget) {
+  for (const input of document.querySelectorAll("#budget-fields input")) {
+    const value = budget && budget[input.dataset.category];
+    if (value !== undefined && value !== null) input.value = value;
+  }
+}
+
+async function loadMemory() {
+  try {
+    const memory = await get("/api/memory");
+    if (memory.budget) fillBudget(memory.budget);   // saved budget, still editable
+    renderMemory(memory);
+  } catch (e) {
+    /* no saved data to show: the page works without it */
+  }
+}
+
+async function resetData() {
+  if (!window.confirm("Delete your saved budget and savings? This also clears the results on screen.")) return;
+  try {
+    const memory = await post("/api/reset", {});
+    for (const input of document.querySelectorAll("#budget-fields input")) {
+      input.value = BUDGET_DEFAULTS.find(([category]) => category === input.dataset.category)[1];
+    }
+    for (const id of ["results", "review", "ask"]) $(id).hidden = true;
+    clearAnswer();
+    renderMemory(memory);
+    setStatus("Your saved data was deleted.");
+  } catch (e) {
+    setStatus(e.message, true);
+  }
+}
+
 function render(data) {
   renderResults(data);
   renderReview(data);
+  renderSaved(data.memory);
+  renderMemory(data.memory);
   $("ask").hidden = false;
 }
 
@@ -395,6 +464,8 @@ for (const button of document.querySelectorAll(".example")) {
 }
 
 buildBudgetForm();
+loadMemory();
+$("reset-btn").addEventListener("click", resetData);
 $("file").addEventListener("change", onFileChosen);
 $("budget-form").addEventListener("submit", analyse);
 $("ask-form").addEventListener("submit", ask);

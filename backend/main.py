@@ -1,4 +1,5 @@
-# FastAPI app: serves frontend/ at / plus the API (/api/preview, /api/analyse, /api/review, /api/ask) and GET /health, on one port.
+# FastAPI app: serves frontend/ at / plus the API (/api/preview, /api/analyse, /api/review, /api/ask,
+# /api/memory, /api/reset) and GET /health, on one port.
 import os
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -9,7 +10,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from backend import analysis, categorise, privacy
+from backend import analysis, categorise, privacy, user_state
 from backend.agent import answer_question, describe_steps, money
 from backend.categorise import CATEGORIES, EXPENSE_CATEGORIES, INCOME, NEEDS_REVIEW
 from backend.parser import parse_csv_text
@@ -113,6 +114,7 @@ def _analysis_payload() -> dict:
         },
         "assignable_categories": [c for c in CATEGORIES if c != NEEDS_REVIEW],
         "transaction_count": len(s["transactions"]),
+        "memory": {**user_state.summary(), "month": s["month"]},
     }
 
 
@@ -128,7 +130,24 @@ def _read_statement(csv_text: str) -> list:
         raise ApiError(400, "The statement has no transactions.")
     if len(transactions) > MAX_ROWS:
         raise ApiError(400, f"Too many transactions ({len(transactions)}); the limit is {MAX_ROWS}.")
+    try:
+        analysis.statement_month(transactions)  # one month per statement, so each month counts once
+    except ValueError as e:
+        raise ApiError(400, str(e)) from e
     return transactions
+
+
+def _remember(save_budget: bool) -> None:
+    """Write the current budget (optional) and this month's savings to the local memory."""
+    s = _STATE
+    savings = analysis.savings(analysis.totals_by_category(s["transactions"], s["labels"]))
+    try:
+        if save_budget:
+            user_state.save_budget(s["budget"])
+        user_state.record_month(s["month"], savings)
+    except OSError as e:
+        raise ApiError(500, f"Could not save your data ({Path(user_state.STATE_PATH).name}): "
+                            f"{type(e).__name__}.") from e
 
 
 @app.post("/api/preview")
@@ -147,7 +166,9 @@ def api_analyse(req: AnalyseRequest):
     budget = _parse_budget(req.budget)
     labels = _model_call(categorise.categorise, transactions)
     _STATE.clear()
-    _STATE.update(transactions=transactions, labels=labels, budget=budget)
+    _STATE.update(transactions=transactions, labels=labels, budget=budget,
+                  month=analysis.statement_month(transactions))
+    _remember(save_budget=True)
     return _analysis_payload()
 
 
@@ -166,6 +187,7 @@ def api_review(req: ReviewRequest):
         raise ApiError(400, f"{req.category!r} does not fit a transaction of {money(tx.amount)} "
                             f"({direction}). Pick another category, for example 'Other'.")
     s["labels"][req.id] = req.category
+    _remember(save_budget=False)  # a review can change savings: keep the stored month in step
     return _analysis_payload()
 
 
@@ -185,6 +207,22 @@ def api_ask(req: AskRequest):
         "steps": describe_steps(result.tool_calls),
         "numbers_checked": result.numbers_checked,
     }
+
+
+@app.get("/api/memory")
+def api_memory():
+    return user_state.summary()
+
+
+@app.post("/api/reset")
+def api_reset():
+    """Forget the saved budget and savings, and the analysis on screen."""
+    try:
+        user_state.reset()
+    except OSError as e:
+        raise ApiError(500, f"Could not delete your saved data: {type(e).__name__}.") from e
+    _STATE.clear()
+    return user_state.summary()
 
 
 @app.get("/health")

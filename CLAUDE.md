@@ -18,6 +18,7 @@
 - `backend/llm.py`: the only file that calls the model (categorising and tool calling).
 - `backend/parser.py`: reads statements into transactions.
 - `backend/privacy.py`: masks personal data (IBAN, card, codice fiscale, email, phone, names after transfer words) in descriptions before anything goes to the model.
+- `backend/user_state.py`: local single-user memory in `data/user_state.json` (gitignored): the last budget and the savings of each analysed month. Only main.py uses it.
 - `backend/categorise.py`: gets categories from llm.py and validates the structured output.
 - `backend/analysis.py`: all totals, variances and savings, in code.
 - `backend/agent.py`: runs the tool-calling loop (max 5 steps) and executes the tools that wrap analysis.py; the API call itself is in llm.py.
@@ -42,12 +43,14 @@
 - Never edit a test or an expected result to make it pass. If a test seems wrong, say so and ask.
 - Never call the model outside `backend/llm.py`.
 - Never send raw descriptions to the model; always go through privacy.py.
+- Never commit `data/user_state.json` or send it to the model (no budget history, no savings totals).
 - Never read, print or commit `.env`. Never commit real bank statements.
 - Never invent transactions, amounts, dates or balances.
 - Never combine currencies without an agreed conversion rule.
 
 ## Mistakes we have seen
 - Plain `pytest` could not import `backend`; `pytest.ini` fixes the path. Always run tests from the repo root.
+- gpt-6.1-terra rejected our API calls with BadRequestError (HTTP 502): it only accepts the default `temperature` (we sent `temperature=0`), and function tools on `/v1/chat/completions` need `reasoning_effort="none"`. Fake-model tests cannot catch this, so `tests/test_llm_request.py` pins the request parameters; after changing `llm.py` or the model name, check one real call.
 - `sed -i` without '' fails on macOS; use Python or the edit tool to change files.
 - Claude tried to weaken a privacy test (allow part of a name to leak) to make it pass. Fix the code, never the test.
 ## Human check of the ground truth

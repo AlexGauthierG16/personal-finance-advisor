@@ -164,3 +164,8 @@ tr.over { background: var(--over-bg); }
 .chart-amounts { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .chart-hit { fill: transparent; }
 .chart-row:hover .chart-hit { fill: var(--bg); }
+
+.memory-strip { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; margin-top: .75rem; font-size: .9rem; color: var(--muted); }
+button.small { margin-top: 0; padding: .2rem .65rem; font-size: .85rem; font-weight: 500; background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.saved { margin: .9rem 0 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.saved .negative { color: var(--over); }
