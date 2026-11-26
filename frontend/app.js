@@ -4,13 +4,13 @@
 
 // Starting budget for a student in Milan (EUR per month). Rough estimates; the user edits them.
 const BUDGET_DEFAULTS = [
-  ["Rent", "600"],          // a room in a shared flat
-  ["Groceries", "200"],
+  ["Rent", "520"],          // a room in a shared flat
+  ["Groceries", "250"],
   ["Eating out", "100"],
-  ["Transport", "30"],      // monthly public transport pass
-  ["Subscriptions", "20"],
-  ["Shopping", "50"],
-  ["Other", "40"],
+  ["Transport", "80"],      // monthly public transport pass
+  ["Subscriptions", "60"],
+  ["Shopping", "100"],
+  ["Other", "200"],
 ];
 
 const $ = (id) => document.getElementById(id);
